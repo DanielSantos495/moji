@@ -12,6 +12,13 @@ fn set_click_through(app: tauri::AppHandle, enabled: bool) {
 }
 
 #[tauri::command]
+fn set_main_size(app: tauri::AppHandle, size: u32) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_size(tauri::LogicalSize::new(size as f64, size as f64));
+    }
+}
+
+#[tauri::command]
 fn open_settings(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();
@@ -73,7 +80,7 @@ pub fn run() {
             setup_tray(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![set_click_through, open_settings])
+        .invoke_handler(tauri::generate_handler![set_click_through, set_main_size, open_settings])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { LogicalSize } from "@tauri-apps/api/window";
+import { emitTo } from "@tauri-apps/api/event";
 import "./Settings.css";
 
 function Settings() {
@@ -12,13 +10,12 @@ function Settings() {
 
   async function handleOpacity(val) {
     setOpacity(val);
-    await emit("moji:opacity", val);
+    await emitTo("main", "moji:opacity", val);
   }
 
   async function handleSize(val) {
     setSize(val);
-    const main = await WebviewWindow.getByLabel("main");
-    if (main) await main.setSize(new LogicalSize(val, val));
+    await invoke("set_main_size", { size: val });
   }
 
   async function handleClickThrough(e) {

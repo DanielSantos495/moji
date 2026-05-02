@@ -12,6 +12,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:event:allow-emit",
+    "core:event:allow-emit-to",
     "core:event:allow-listen",
     "core:webview:allow-create-webview-window",
     "opener:default"
