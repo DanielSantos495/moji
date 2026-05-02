@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "moji-temp",
+  "productName": "Moji",
   "version": "0.1.0",
-  "identifier": "com.apple.moji-temp",
+  "identifier": "com.moji.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,23 @@
   "app": {
     "windows": [
       {
-        "title": "moji-temp",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "Moji",
+        "width": 200,
+        "height": 200,
+        "minWidth": 100,
+        "minHeight": 100,
+        "maxWidth": 400,
+        "maxHeight": 400,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "shadow": false,
+        "x": 1700,
+        "y": 800,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true
       }
     ],
     "security": {
