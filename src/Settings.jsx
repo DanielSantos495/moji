@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
 import "./Settings.css";
 
 function Settings() {
@@ -10,7 +9,7 @@ function Settings() {
 
   async function handleOpacity(val) {
     setOpacity(val);
-    await emitTo("main", "moji:opacity", val);
+    await invoke("set_main_opacity", { opacity: val });
   }
 
   async function handleSize(val) {

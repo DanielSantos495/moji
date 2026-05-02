@@ -1,6 +1,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    webview::Color,
     Manager,
 };
 
@@ -15,6 +16,14 @@ fn set_click_through(app: tauri::AppHandle, enabled: bool) {
 fn set_main_size(app: tauri::AppHandle, size: u32) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_size(tauri::LogicalSize::new(size as f64, size as f64));
+    }
+}
+
+#[tauri::command]
+fn set_main_opacity(app: tauri::AppHandle, opacity: f64) {
+    if let Some(window) = app.get_webview_window("main") {
+        let js = format!("document.documentElement.style.opacity = '{opacity}'");
+        let _ = window.eval(&js);
     }
 }
 
@@ -77,10 +86,18 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+            }
             setup_tray(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![set_click_through, set_main_size, open_settings])
+        .invoke_handler(tauri::generate_handler![
+            set_click_through,
+            set_main_size,
+            set_main_opacity,
+            open_settings
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

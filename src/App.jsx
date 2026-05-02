@@ -1,18 +1,11 @@
-import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
+import Kael from "./components/Kael";
 import "./App.css";
 
 const win = getCurrentWindow();
 
 function App() {
-  useEffect(() => {
-    const unlisten = listen("moji:opacity", (e) => {
-      document.documentElement.style.opacity = e.payload;
-    });
-    return () => unlisten.then((fn) => fn());
-  }, []);
 
   function handleDrag(e) {
     e.preventDefault();
@@ -25,9 +18,7 @@ function App() {
 
   return (
     <div className="moji-window">
-      <div className="kael" onClick={() => console.log("Kael touched!")}>
-        🦊
-      </div>
+      <Kael onClick={() => console.log("Kael touched!")} />
       <div className="corner-handle">
         <div className="drag-handle" onMouseDown={handleDrag} title="Mover">
           ⠿
