@@ -88,6 +88,20 @@ pub fn run() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = window.with_webview(|wv| {
+                        unsafe {
+                            use objc2::msg_send;
+                            use objc2::runtime::AnyObject;
+                            let wkwebview: *mut AnyObject = wv.inner().cast();
+                            let _: () = msg_send![wkwebview, setOpaque: false];
+                            let clear: *mut AnyObject = std::ptr::null_mut();
+                            let _: () = msg_send![wkwebview, setBackgroundColor: clear];
+                        }
+                    });
+                }
             }
             setup_tray(app)?;
             Ok(())
