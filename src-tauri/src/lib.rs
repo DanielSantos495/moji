@@ -1,9 +1,15 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    webview::Color,
     Manager,
 };
+
+const TRANSPARENT_SCRIPT: &str = r#"
+    document.documentElement.style.background = 'transparent';
+    document.documentElement.style.backgroundColor = 'transparent';
+    document.body.style.background = 'transparent';
+    document.body.style.backgroundColor = 'transparent';
+"#;
 
 #[tauri::command]
 fn set_click_through(app: tauri::AppHandle, enabled: bool) {
@@ -46,6 +52,24 @@ fn open_settings(app: tauri::AppHandle) {
     }
 }
 
+fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+        .title("Moji")
+        .inner_size(200.0, 200.0)
+        .min_inner_size(100.0, 100.0)
+        .max_inner_size(400.0, 400.0)
+        .position(100.0, 100.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .initialization_script(TRANSPARENT_SCRIPT)
+        .build()?;
+    Ok(())
+}
+
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let settings_item =
         MenuItem::with_id(app, "settings", "Configuración", true, None::<&str>)?;
@@ -86,23 +110,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-
-                #[cfg(target_os = "macos")]
-                {
-                    let _ = window.with_webview(|wv| {
-                        unsafe {
-                            use objc2::msg_send;
-                            use objc2::runtime::AnyObject;
-                            let wkwebview: *mut AnyObject = wv.inner().cast();
-                            let _: () = msg_send![wkwebview, setOpaque: false];
-                            let clear: *mut AnyObject = std::ptr::null_mut();
-                            let _: () = msg_send![wkwebview, setBackgroundColor: clear];
-                        }
-                    });
-                }
-            }
+            create_main_window(app)?;
             setup_tray(app)?;
             Ok(())
         })

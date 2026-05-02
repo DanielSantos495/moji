@@ -11,26 +11,7 @@
   },
   "app": {
     "macOSPrivateApi": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Moji",
-        "width": 200,
-        "height": 200,
-        "minWidth": 100,
-        "minHeight": 100,
-        "maxWidth": 400,
-        "maxHeight": 400,
-        "resizable": true,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "shadow": false,
-        "x": 100,
-        "y": 100,
-        "skipTaskbar": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
