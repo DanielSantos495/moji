@@ -1,43 +1,39 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
+const win = getCurrentWindow();
+
 function App() {
-  const [opacity, setOpacity] = useState(1);
-  const [clickThrough, setClickThrough] = useState(false);
-
   useEffect(() => {
-    document.documentElement.style.opacity = opacity;
-  }, [opacity]);
+    const unlisten = listen("moji:opacity", (e) => {
+      document.documentElement.style.opacity = e.payload;
+    });
+    return () => unlisten.then((fn) => fn());
+  }, []);
 
-  function toggleClickThrough() {
-    const next = !clickThrough;
-    setClickThrough(next);
-    invoke("set_click_through", { enabled: next });
+  function handleDrag(e) {
+    e.preventDefault();
+    win.startDragging();
+  }
+
+  function openSettings() {
+    invoke("open_settings");
   }
 
   return (
     <div className="moji-window">
-      <div
-        className="kael-placeholder"
-        onClick={() => console.log("Kael touched!")}
-        title="Kael"
-      >
+      <div className="kael" onClick={() => console.log("Kael touched!")}>
         🦊
       </div>
-
-      <div className="controls">
-        <input
-          type="range"
-          min="0.2"
-          max="1"
-          step="0.05"
-          value={opacity}
-          onChange={(e) => setOpacity(parseFloat(e.target.value))}
-          title="Opacidad"
-        />
-        <button onClick={toggleClickThrough}>
-          {clickThrough ? "🔓 Click-through ON" : "🔒 Click-through OFF"}
+      <div className="corner-handle">
+        <div className="drag-handle" onMouseDown={handleDrag} title="Mover">
+          ⠿
+        </div>
+        <button className="settings-btn" onClick={openSettings} title="Configuración">
+          ⚙
         </button>
       </div>
     </div>
