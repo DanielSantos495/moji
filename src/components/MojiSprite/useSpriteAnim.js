@@ -1,16 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-// Hook que maneja el loop de animación con requestAnimationFrame.
-// Devuelve el frame actual (número) para que SpritePlayer lo use.
-export function useSpriteAnim({ frames, fps, loop, onComplete }) {
-  const [frame, setFrame] = useState(0);
+// Maneja el loop de animación con requestAnimationFrame.
+// Soporta dos modos:
+//   - loop: true  → animación continua (estados como work, sad)
+//   - loop: false → se dispara una vez y queda en restFrame (default, celebrate, pet)
+export function useSpriteAnim({ frames, fps, loop, restFrame = 0, onComplete }) {
+  const [frame, setFrame] = useState(restFrame);
+  const [playing, setPlaying] = useState(false);
   const rafRef = useRef(null);
   const lastTimeRef = useRef(null);
-  const frameRef = useRef(0);
+  const frameRef = useRef(restFrame);
   const interval = 1000 / fps;
 
+  // Inicia la animación desde el frame 0
+  const play = useCallback(() => {
+    setPlaying(true);
+  }, []);
+
   useEffect(() => {
-    // Reinicia al cambiar la animación
+    if (!playing && !loop) return;
+
     frameRef.current = 0;
     lastTimeRef.current = null;
     setFrame(0);
@@ -28,9 +37,11 @@ export function useSpriteAnim({ frames, fps, loop, onComplete }) {
           if (loop) {
             frameRef.current = 0;
           } else {
-            setFrame(frames - 1);
+            // Terminó: queda en restFrame y notifica
+            setFrame(restFrame);
+            setPlaying(false);
             onComplete?.();
-            return; // Detiene el loop
+            return;
           }
         }
 
@@ -42,7 +53,7 @@ export function useSpriteAnim({ frames, fps, loop, onComplete }) {
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [frames, fps, loop]); // Se reinicia si cambia la animación
+  }, [playing, loop, frames, fps, restFrame]);
 
-  return frame;
+  return { frame, play, playing };
 }

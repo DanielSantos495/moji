@@ -1,16 +1,20 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useSpriteAnim } from './useSpriteAnim';
 import './SpritePlayer.css';
 
-export default function SpritePlayer({ config, onComplete, onClick }) {
-  const { src, frames, cols, rows, frameWidth, frameHeight, fps, loop } = config;
+// forwardRef permite que MojiSprite llame a player.play() desde afuera
+const SpritePlayer = forwardRef(function SpritePlayer({ config, onComplete, onClick }, ref) {
+  const { src, frames, cols, rows, frameWidth, frameHeight, fps, loop, restFrame } = config;
 
   const containerRef = useRef(null);
   const playerRef = useRef(null);
 
-  const frame = useSpriteAnim({ frames, fps, loop, onComplete });
+  const { frame, play } = useSpriteAnim({ frames, fps, loop, restFrame, onComplete });
 
-  // Calcula posición del frame actual en el grid
+  // Expone play() al componente padre
+  useImperativeHandle(ref, () => ({ play }), [play]);
+
+  // Calcula posición del frame en el grid
   const col = frame % cols;
   const row = Math.floor(frame / cols);
   const x = col * frameWidth;
@@ -33,11 +37,7 @@ export default function SpritePlayer({ config, onComplete, onClick }) {
   }, [frameWidth, frameHeight]);
 
   return (
-    <div
-      ref={containerRef}
-      className="sprite-container"
-      onClick={onClick}
-    >
+    <div ref={containerRef} className="sprite-container" onClick={onClick}>
       <div
         ref={playerRef}
         className="sprite-player"
@@ -51,4 +51,6 @@ export default function SpritePlayer({ config, onComplete, onClick }) {
       />
     </div>
   );
-}
+});
+
+export default SpritePlayer;

@@ -11,16 +11,17 @@ import kaelDefault from '../../characters/kael/default.png';
 
 export const REGISTRY = {
   kael: {
-    // Animación principal — loop infinito, se activa al inicio y al hacer clic
+    // Animación principal — se dispara al cargar y al hacer clic, no hace loop
     default: {
       src: kaelDefault,
       frames: 36,
       cols: 6,
       rows: 6,
-      frameWidth: 542,
-      frameHeight: 332,
+      frameWidth: 142,
+      frameHeight: 92,
       fps: 12,
-      loop: true,
+      loop: false,      // Plays once per trigger
+      restFrame: 0,     // Frame que se muestra en reposo (0 = primer frame)
     },
 
     // Estados futuros — agrega el PNG y descomenta cuando estén listos:
