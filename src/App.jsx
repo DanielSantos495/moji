@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import Kael from "./components/Kael";
+import MojiSprite from "./components/MojiSprite";
 import "./App.css";
 
 const win = getCurrentWindow();
@@ -18,7 +18,7 @@ function App() {
 
   return (
     <div className="moji-window">
-      <Kael onClick={() => console.log("Kael touched!")} />
+      <MojiSprite onClick={() => console.log("Kael touched!")} />
       <div className="corner-handle">
         <div className="drag-handle" onMouseDown={handleDrag} title="Mover">
           ⠿
