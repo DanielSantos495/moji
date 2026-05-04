@@ -3,7 +3,7 @@ import { useSpriteAnim } from './useSpriteAnim';
 import './SpritePlayer.css';
 
 // forwardRef permite que MojiSprite llame a player.play() desde afuera
-const SpritePlayer = forwardRef(function SpritePlayer({ config, onComplete, onClick }, ref) {
+const SpritePlayer = forwardRef(function SpritePlayer({ config, onComplete, onHover }, ref) {
   const { src, frames, cols, rows, frameWidth, frameHeight, fps, loop, restFrame } = config;
 
   const containerRef = useRef(null);
@@ -37,7 +37,7 @@ const SpritePlayer = forwardRef(function SpritePlayer({ config, onComplete, onCl
   }, [frameWidth, frameHeight]);
 
   return (
-    <div ref={containerRef} className="sprite-container" onClick={onClick}>
+    <div ref={containerRef} className="sprite-container" onMouseEnter={onHover}>
       <div
         ref={playerRef}
         className="sprite-player"

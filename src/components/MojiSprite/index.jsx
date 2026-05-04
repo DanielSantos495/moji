@@ -26,7 +26,7 @@ export default function MojiSprite({
     playerRef.current?.play();
   }, [state]);
 
-  function handleClick() {
+  function handleHover() {
     playerRef.current?.play();
   }
 
@@ -36,7 +36,7 @@ export default function MojiSprite({
       ref={playerRef}
       config={config}
       onComplete={onStateEnd}
-      onClick={handleClick}
+      onHover={handleHover}
     />
   );
 }
