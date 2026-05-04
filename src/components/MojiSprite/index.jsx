@@ -1,14 +1,15 @@
 import { useRef, useEffect } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import SpritePlayer from './SpritePlayer';
 import { REGISTRY, DEFAULT_CHARACTER, DEFAULT_STATE } from './registry';
 
-// API pública: <MojiSprite character="kael" state="default" onClick={fn} />
+// API pública: <MojiSprite character="kael" state="default" />
 //
-// Comportamiento:
-//   - Al cargar: dispara la animación automáticamente (una vez)
-//   - Al hacer clic: dispara la animación nuevamente
-//   - Entre disparos: queda en restFrame (pose estática)
-//   - Estados con loop:true (work, sad, etc.) corren de forma continua
+// Triggers de animación:
+//   - Al cargar: reproduce automáticamente
+//   - Al hacer hover (cursor-entered): evento nativo de Tauri, funciona
+//     sin importar si la app tiene el foco o no
+//   - Si ya está reproduciéndose, ignora el trigger hasta que termine
 
 export default function MojiSprite({
   character = DEFAULT_CHARACTER,
@@ -21,14 +22,23 @@ export default function MojiSprite({
     REGISTRY[character]?.[state] ??
     REGISTRY[DEFAULT_CHARACTER][DEFAULT_STATE];
 
-  // Dispara al cargar el componente
+  // Dispara al cargar
   useEffect(() => {
     playerRef.current?.play();
   }, [state]);
 
-  function handleHover() {
-    playerRef.current?.play();
-  }
+  // Escucha el cursor a nivel OS — funciona sin foco en la app
+  useEffect(() => {
+    let unlisten;
+
+    getCurrentWindow()
+      .listen('tauri://cursor-entered', () => {
+        playerRef.current?.play();
+      })
+      .then((fn) => { unlisten = fn; });
+
+    return () => unlisten?.();
+  }, []);
 
   return (
     <SpritePlayer
@@ -36,7 +46,6 @@ export default function MojiSprite({
       ref={playerRef}
       config={config}
       onComplete={onStateEnd}
-      onHover={handleHover}
     />
   );
 }

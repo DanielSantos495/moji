@@ -12,9 +12,13 @@ export function useSpriteAnim({ frames, fps, loop, restFrame = 0, onComplete }) 
   const frameRef = useRef(restFrame);
   const interval = 1000 / fps;
 
-  // Inicia la animación desde el frame 0
+  // Inicia la animación — ignora si ya está en reproducción
+  const playingRef = useRef(false);
   const play = useCallback(() => {
-    setPlaying(true);
+    if (!playingRef.current) {
+      playingRef.current = true;
+      setPlaying(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -39,6 +43,7 @@ export function useSpriteAnim({ frames, fps, loop, restFrame = 0, onComplete }) 
           } else {
             // Terminó: queda en restFrame y notifica
             setFrame(restFrame);
+            playingRef.current = false;
             setPlaying(false);
             onComplete?.();
             return;
