@@ -1,64 +1,53 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 
-// Maneja el loop de animación con requestAnimationFrame.
-// Soporta dos modos:
-//   - loop: true  → animación continua (estados como work, sad)
-//   - loop: false → se dispara una vez y queda en restFrame (default, celebrate, pet)
 export function useSpriteAnim({ frames, fps, loop, restFrame = 0, onComplete }) {
-  const [frame, setFrame] = useState(restFrame);
-  const [playing, setPlaying] = useState(false);
+  const [displayFrame, setDisplayFrame] = useState(restFrame);
   const rafRef = useRef(null);
-  const lastTimeRef = useRef(null);
-  const frameRef = useRef(restFrame);
+  const isPlayingRef = useRef(false);
   const interval = 1000 / fps;
 
-  // Inicia la animación — ignora si ya está en reproducción
-  const playingRef = useRef(false);
   const play = useCallback(() => {
-    if (!playingRef.current) {
-      playingRef.current = true;
-      setPlaying(true);
-    }
-  }, []);
+    if (isPlayingRef.current) return;
+    isPlayingRef.current = true;
 
-  useEffect(() => {
-    if (!playing && !loop) return;
+    let currentFrame = 0;
+    let lastTime = null;
+    setDisplayFrame(0);
 
-    frameRef.current = 0;
-    lastTimeRef.current = null;
-    setFrame(0);
+    function tick(ts) {
+      if (!lastTime) lastTime = ts;
 
-    function tick(timestamp) {
-      if (!lastTimeRef.current) lastTimeRef.current = timestamp;
+      if (ts - lastTime >= interval) {
+        lastTime = ts - ((ts - lastTime) % interval);
+        currentFrame++;
 
-      const elapsed = timestamp - lastTimeRef.current;
-
-      if (elapsed >= interval) {
-        lastTimeRef.current = timestamp - (elapsed % interval);
-        frameRef.current += 1;
-
-        if (frameRef.current >= frames) {
+        if (currentFrame >= frames) {
           if (loop) {
-            frameRef.current = 0;
+            currentFrame = 0;
           } else {
-            // Terminó: queda en restFrame y notifica
-            setFrame(restFrame);
-            playingRef.current = false;
-            setPlaying(false);
+            isPlayingRef.current = false;
+            setDisplayFrame(restFrame);
             onComplete?.();
             return;
           }
         }
 
-        setFrame(frameRef.current);
+        setDisplayFrame(currentFrame);
       }
 
       rafRef.current = requestAnimationFrame(tick);
     }
 
     rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, loop, frames, fps, restFrame]);
+  }, [frames, fps, loop, restFrame, onComplete, interval]);
 
-  return { frame, play, playing };
+  // Limpieza al desmontar
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      isPlayingRef.current = false;
+    };
+  }, []);
+
+  return { frame: displayFrame, play };
 }
