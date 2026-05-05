@@ -26,12 +26,16 @@ const kael = new Character('kael', {
 
 // Ejemplo futuro:
 // import otroDefault from '../../characters/otro/default.png';
-// import otroClick from '../../characters/otro/click.png';
+import embiDefault from '../../characters/embi/default.png';
 // const otro = new Character('otro', { default: otroDefault, click: otroClick });
+
+const embi = new Character('embi', {
+  default: embiDefault,
+});
 
 export const REGISTRY = {
   [kael.name]: kael.states,
-  // [otro.name]: otro.states,
+  [embi.name]: embi.states,
 };
 
 export const DEFAULT_CHARACTER = 'kael';
