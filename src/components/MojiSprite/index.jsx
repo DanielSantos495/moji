@@ -1,31 +1,57 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import SpritePlayer from './SpritePlayer';
-import { REGISTRY, DEFAULT_CHARACTER, DEFAULT_STATE } from './registry';
+import { REGISTRY, DEFAULT_CHARACTER, DEFAULT_STATE, CLICK_STATE } from './registry';
 
-export default function MojiSprite({
-  character = DEFAULT_CHARACTER,
-  state = DEFAULT_STATE,
-  onStateEnd,
-}) {
+const FOUR_MINUTES = 4 * 60 * 1000;
+
+export default function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }) {
   const playerRef = useRef(null);
+  const [activeState, setActiveState] = useState(DEFAULT_STATE);
+  const isClickPlayingRef = useRef(false);
 
   const config =
-    REGISTRY[character]?.[state] ??
+    REGISTRY[character]?.[activeState] ??
     REGISTRY[DEFAULT_CHARACTER][DEFAULT_STATE];
 
-  // Dispara al cargar
+  // Lanza la animación del estado indicado
+  function triggerState(nextState) {
+    setActiveState(nextState);
+    // setTimeout permite que el remount por key tenga tiempo de completarse
+    setTimeout(() => playerRef.current?.play(), 100);
+  }
+
+  // Reproduce default al iniciar
   useEffect(() => {
-    const timer = setTimeout(() => playerRef.current?.play(), 100);
-    return () => clearTimeout(timer);
-  }, [state]);
+    triggerState(DEFAULT_STATE);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reproduce default cada 4 minutos si no hay un click en curso
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!isClickPlayingRef.current) triggerState(DEFAULT_STATE);
+    }, FOUR_MINUTES);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleClick() {
+    if (isClickPlayingRef.current) return; // No interrumpir si ya está corriendo
+    isClickPlayingRef.current = true;
+    triggerState(CLICK_STATE);
+  }
+
+  function handleComplete() {
+    isClickPlayingRef.current = false;
+    setActiveState(DEFAULT_STATE);
+    onStateEnd?.();
+  }
 
   return (
     <SpritePlayer
-      key={`${character}-${state}`}
+      key={activeState}
       ref={playerRef}
       config={config}
-      onComplete={onStateEnd}
-      onClick={() => playerRef.current?.play()}
+      onComplete={handleComplete}
+      onClick={handleClick}
     />
   );
 }

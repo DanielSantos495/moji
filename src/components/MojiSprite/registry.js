@@ -1,4 +1,5 @@
 import kaelDefault from '../../characters/kael/default.png';
+import click from '../../characters/kael/click.png';
 
 // ─────────────────────────────────────────────────────────────
 // REGISTRY — única fuente de verdad para todas las animaciones.
@@ -11,9 +12,22 @@ import kaelDefault from '../../characters/kael/default.png';
 
 export const REGISTRY = {
   kael: {
-    // Animación principal — se dispara al cargar y al hacer clic, no hace loop
+    // Expresión típica de Kael — se reproduce cada 4 minutos automáticamente
     default: {
       src: kaelDefault,
+      frames: 36,       // ← ajusta si es diferente
+      cols: 6,          // ← ajusta según el grid del PNG (2430 / cols = frameWidth)
+      rows: 6,          // ← ajusta según el grid del PNG (1830 / rows = frameHeight)
+      frameWidth: 405,  // 2430 / 6
+      frameHeight: 305, // 1830 / 6
+      fps: 10,
+      loop: false,
+      restFrame: 0,
+    },
+
+    // Animación al hacer clic — se dispara una vez por clic
+    click: {
+      src: click,
       frames: 36,
       cols: 6,
       rows: 6,
@@ -35,3 +49,4 @@ export const REGISTRY = {
 
 export const DEFAULT_CHARACTER = 'kael';
 export const DEFAULT_STATE = 'default';
+export const CLICK_STATE = 'click';
