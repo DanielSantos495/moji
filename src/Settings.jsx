@@ -1,11 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./Settings.css";
 
 function Settings() {
   const [opacity, setOpacity] = useState(1);
   const [size, setSize] = useState(200);
   const [clickThrough, setClickThrough] = useState(false);
+
+  useEffect(() => {
+    invoke("get_click_through").then(setClickThrough);
+
+    const unlisten = listen("click-through-changed", (event) => {
+      setClickThrough(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   async function handleOpacity(val) {
     setOpacity(val);
@@ -63,8 +75,8 @@ function Settings() {
 
         <div className="setting-row">
           <label>
-            No interrumpir
-            <span className="setting-hint">Kael no bloquea clics</span>
+            Modo Fantasma
+            <span className="setting-hint">Los clics atraviesan a Kael</span>
           </label>
           <label className="toggle">
             <input

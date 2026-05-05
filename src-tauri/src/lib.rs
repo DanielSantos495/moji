@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager,
 };
 
 const TRANSPARENT_SCRIPT: &str = r#"
@@ -12,26 +12,44 @@ const TRANSPARENT_SCRIPT: &str = r#"
     document.body.style.backgroundColor = 'transparent';
 "#;
 
-// Estado compartido — preferencia del usuario sobre click-through
-struct ClickThroughState(Arc<Mutex<bool>>);
+struct ClickThroughState(Mutex<bool>);
+struct GhostMenuState(CheckMenuItem<tauri::Wry>);
+
+fn apply_click_through(app: &tauri::AppHandle, enabled: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_ignore_cursor_events(enabled);
+    }
+    let _ = app.emit("click-through-changed", enabled);
+}
+
+fn toggle_ghost_mode(app: &tauri::AppHandle) {
+    let state = app.state::<ClickThroughState>();
+    let mut guard = state.0.lock().unwrap();
+    *guard = !*guard;
+    let enabled = *guard;
+    drop(guard);
+
+    apply_click_through(app, enabled);
+
+    let ghost = app.state::<GhostMenuState>();
+    let _ = ghost.0.set_checked(enabled);
+}
+
+#[tauri::command]
+fn get_click_through(state: tauri::State<'_, ClickThroughState>) -> bool {
+    *state.0.lock().unwrap()
+}
 
 #[tauri::command]
 fn set_click_through(
     app: tauri::AppHandle,
     state: tauri::State<'_, ClickThroughState>,
+    ghost: tauri::State<'_, GhostMenuState>,
     enabled: bool,
 ) {
     *state.0.lock().unwrap() = enabled;
-
-    // En no-macOS, aplica el toggle directo (sin smart tracking).
-    // En macOS, el cursor_tracker se encarga de aplicarlo dinámicamente.
-    #[cfg(not(target_os = "macos"))]
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_ignore_cursor_events(enabled);
-    }
-
-    #[cfg(target_os = "macos")]
-    let _ = app; // suprime el warning de variable no usada
+    apply_click_through(&app, enabled);
+    let _ = ghost.0.set_checked(enabled);
 }
 
 #[tauri::command]
@@ -87,15 +105,27 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
 }
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let ghost_item = CheckMenuItem::with_id(
+        app,
+        "ghost",
+        "Modo Fantasma",
+        true,
+        false,
+        Some("CmdOrCtrl+Shift+M"),
+    )?;
+
+    app.manage(GhostMenuState(ghost_item.clone()));
+
     let settings_item =
         MenuItem::with_id(app, "settings", "Configuración", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Salir de Moji", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+    let menu = Menu::with_items(app, &[&ghost_item, &settings_item, &quit_item])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
+            "ghost" => toggle_ghost_mode(app),
             "settings" => {
                 if let Some(win) = app.get_webview_window("settings") {
                     let _ = win.show();
@@ -121,125 +151,36 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-// ── Smart click-through (macOS) ─────────────────────────────────────────────
-// Cuando el usuario activa "no interrumpir":
-//   - Si el cursor está sobre el área de controles (⠿ y ⚙ en la esquina
-//     superior derecha): desactiva click-through → los iconos funcionan.
-//   - En cualquier otro punto de la ventana: click-through activo → los
-//     clics pasan a la app de abajo.
-
-#[cfg(target_os = "macos")]
-mod cursor_tracker {
-    use std::ffi::c_void;
-    use std::sync::{Arc, Mutex};
-    use tauri::Manager;
-
-    // Tamaño del área interactiva en la esquina superior derecha (px lógicos)
-    const CONTROLS_WIDTH: f64 = 40.0;
-    const CONTROLS_HEIGHT: f64 = 60.0;
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct CGPoint {
-        x: f64,
-        y: f64,
-    }
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGEventCreate(source: *const c_void) -> *mut c_void;
-        fn CGEventGetLocation(event: *const c_void) -> CGPoint;
-        fn CFRelease(cf: *const c_void);
-    }
-
-    fn cursor_pos() -> (f64, f64) {
-        unsafe {
-            let event = CGEventCreate(std::ptr::null());
-            let pt = CGEventGetLocation(event);
-            CFRelease(event);
-            (pt.x, pt.y)
-        }
-    }
-
-    fn cursor_in_controls(window: &tauri::WebviewWindow) -> bool {
-        let (cx, cy_mac) = cursor_pos();
-
-        let monitor = match window.current_monitor() {
-            Ok(Some(m)) => m,
-            _ => return false,
-        };
-        let scale = monitor.scale_factor();
-        let screen_h = monitor.size().height as f64 / scale;
-
-        let pos = match window.outer_position() {
-            Ok(p) => p,
-            Err(_) => return false,
-        };
-        let size = match window.outer_size() {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-
-        // macOS: Y=0 abajo. Tauri: Y=0 arriba. Convertimos.
-        let cy = screen_h - cy_mac;
-        let wx = pos.x as f64 / scale;
-        let wy = pos.y as f64 / scale;
-        let ww = size.width as f64 / scale;
-
-        // Esquina superior derecha de la ventana
-        let in_x = cx >= wx + ww - CONTROLS_WIDTH && cx <= wx + ww;
-        let in_y = cy >= wy && cy <= wy + CONTROLS_HEIGHT;
-        in_x && in_y
-    }
-
-    pub fn start(app: tauri::AppHandle, click_through: Arc<Mutex<bool>>) {
-        std::thread::spawn(move || {
-            let mut current_ignore: Option<bool> = None;
-
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-
-                let enabled = match click_through.lock() {
-                    Ok(g) => *g,
-                    Err(_) => continue,
-                };
-
-                let window = match app.get_webview_window("main") {
-                    Some(w) => w,
-                    None => continue,
-                };
-
-                let should_ignore = enabled && !cursor_in_controls(&window);
-
-                if Some(should_ignore) != current_ignore {
-                    let _ = window.set_ignore_cursor_events(should_ignore);
-                    current_ignore = Some(should_ignore);
-                }
-            }
-        });
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let click_through = Arc::new(Mutex::new(false));
-            app.manage(ClickThroughState(click_through.clone()));
+            app.manage(ClickThroughState(Mutex::new(false)));
 
             create_main_window(app)?;
             setup_tray(app)?;
 
-            #[cfg(target_os = "macos")]
-            cursor_tracker::start(app.handle().clone(), click_through);
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::ShortcutState;
 
-            #[cfg(not(target_os = "macos"))]
-            let _ = click_through;
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_shortcuts(["CmdOrCtrl+Shift+M"])?
+                        .with_handler(|app, _shortcut, event| {
+                            if event.state == ShortcutState::Pressed {
+                                toggle_ghost_mode(app);
+                            }
+                        })
+                        .build(),
+                )?;
+            }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_click_through,
             set_click_through,
             set_main_size,
             set_main_opacity,
