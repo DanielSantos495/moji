@@ -4,84 +4,6 @@ use tauri::{
     Manager,
 };
 
-// ── Cursor tracking (macOS) ──────────────────────────────────────────────────
-// Lee la posición del cursor via CoreGraphics (no requiere Accessibility).
-// Corre en un hilo separado y emite "moji:hover" cuando el cursor entra
-// a la ventana principal, sin importar si la app tiene focus o no.
-
-#[cfg(target_os = "macos")]
-mod cursor_tracker {
-    use std::ffi::c_void;
-    use tauri::{Emitter, Manager};
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct CGPoint {
-        x: f64,
-        y: f64,
-    }
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGEventCreate(source: *const c_void) -> *mut c_void;
-        fn CGEventGetLocation(event: *const c_void) -> CGPoint;
-        fn CFRelease(cf: *const c_void);
-    }
-
-    fn cursor_pos() -> (f64, f64) {
-        unsafe {
-            let event = CGEventCreate(std::ptr::null());
-            let pt = CGEventGetLocation(event);
-            CFRelease(event);
-            (pt.x, pt.y)
-        }
-    }
-
-    fn is_over_window(window: &tauri::WebviewWindow) -> bool {
-        let (cx, cy_mac) = cursor_pos();
-
-        let monitor = match window.current_monitor() {
-            Ok(Some(m)) => m,
-            _ => return false,
-        };
-        let scale = monitor.scale_factor();
-        let screen_h = monitor.size().height as f64 / scale;
-
-        let pos = match window.outer_position() {
-            Ok(p) => p,
-            Err(_) => return false,
-        };
-        let size = match window.outer_size() {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-
-        // macOS: Y=0 en la parte inferior. Tauri: Y=0 en la parte superior.
-        let cy = screen_h - cy_mac;
-        let wx = pos.x as f64 / scale;
-        let wy = pos.y as f64 / scale;
-        let ww = size.width as f64 / scale;
-        let wh = size.height as f64 / scale;
-
-        cx >= wx && cx <= wx + ww && cy >= wy && cy <= wy + wh
-    }
-
-    pub fn start(app: tauri::AppHandle) {
-        std::thread::spawn(move || {
-            let mut was_inside = false;
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                if let Some(window) = app.get_webview_window("main") {
-                    let inside = is_over_window(&window);
-                    if inside && !was_inside {
-                        let _ = window.emit("moji:hover", ());
-                    }
-                    was_inside = inside;
-                }
-            }
-        });
-    }
-}
 
 const TRANSPARENT_SCRIPT: &str = r#"
     document.documentElement.style.background = 'transparent';
@@ -191,8 +113,6 @@ pub fn run() {
         .setup(|app| {
             create_main_window(app)?;
             setup_tray(app)?;
-            #[cfg(target_os = "macos")]
-            cursor_tracker::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
