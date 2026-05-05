@@ -2,7 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import SpritePlayer from './SpritePlayer';
 import { REGISTRY, DEFAULT_CHARACTER, DEFAULT_STATE, CLICK_STATE } from './registry';
 
-const FOUR_MINUTES = 4 * 60 * 1000;
+const INTERVAL_MINUTES = 1 * 60 * 1000;
 
 export default function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }) {
   const playerRef = useRef(null);
@@ -29,7 +29,7 @@ export default function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }
   useEffect(() => {
     const id = setInterval(() => {
       if (!isClickPlayingRef.current) triggerState(DEFAULT_STATE);
-    }, FOUR_MINUTES);
+    }, INTERVAL_MINUTES);
     return () => clearInterval(id);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
