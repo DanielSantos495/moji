@@ -75,6 +75,11 @@ body {
   accent-color: #b5ead7;
 }
 
+.setting-control input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .setting-select {
   font-size: 13px;
   font-family: inherit;

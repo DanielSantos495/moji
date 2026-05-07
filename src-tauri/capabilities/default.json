@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": ["main", "hydration"],
   "permissions": [
     "core:default",
     "core:window:allow-set-ignore-cursor-events",
@@ -10,6 +10,7 @@
     "core:window:allow-set-size",
     "core:window:allow-show",
     "core:window:allow-set-focus",
+    "core:window:allow-close",
     "core:event:allow-emit",
     "core:event:allow-emit-to",
     "core:event:allow-listen",

@@ -1,10 +1,10 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import SpritePlayer from './SpritePlayer';
 import { REGISTRY, DEFAULT_CHARACTER, DEFAULT_STATE, CLICK_STATE } from './registry';
 
 const INTERVAL_MINUTES = 1 * 60 * 1000;
 
-export default function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }) {
+const MojiSprite = forwardRef(function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }, ref) {
   const playerRef = useRef(null);
   const [activeState, setActiveState] = useState(DEFAULT_STATE);
   const isClickPlayingRef = useRef(false);
@@ -20,6 +20,10 @@ export default function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }
     // setTimeout permite que el remount por key tenga tiempo de completarse
     setTimeout(() => playerRef.current?.play(), 100);
   }
+
+  // Expone trigger() para que App.jsx pueda disparar estados externos
+  // (recordatorio de hidratación, celebración tras confirmar, etc.)
+  useImperativeHandle(ref, () => ({ trigger: triggerState }), [character]);
 
   // Reproduce default al iniciar y cada vez que cambia el personaje.
   useEffect(() => {
@@ -59,4 +63,6 @@ export default function MojiSprite({ character = DEFAULT_CHARACTER, onStateEnd }
       onClick={handleClick}
     />
   );
-}
+});
+
+export default MojiSprite;

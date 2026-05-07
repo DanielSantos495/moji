@@ -9,6 +9,8 @@ function Settings() {
   const [size, setSize] = useState(120);
   const [clickThrough, setClickThrough] = useState(false);
   const [character, setCharacter] = useState(DEFAULT_CHARACTER);
+  const [hydrationEnabled, setHydrationEnabled] = useState(true);
+  const [hydrationInterval, setHydrationInterval] = useState(60);
 
   useEffect(() => {
     invoke("get_config").then((c) => {
@@ -17,6 +19,8 @@ function Settings() {
       setSize(c.size);
       setClickThrough(c.click_through);
       if (c.character) setCharacter(c.character);
+      if (typeof c.hydration_enabled === "boolean") setHydrationEnabled(c.hydration_enabled);
+      if (typeof c.hydration_interval_min === "number") setHydrationInterval(c.hydration_interval_min);
     });
 
     const unlisten = listen("click-through-changed", (event) => {
@@ -46,6 +50,17 @@ function Settings() {
   async function handleCharacter(value) {
     setCharacter(value);
     await invoke("set_character", { character: value });
+  }
+
+  async function handleHydrationEnabled(e) {
+    const enabled = e.target.checked;
+    setHydrationEnabled(enabled);
+    await invoke("set_hydration_enabled", { enabled });
+  }
+
+  async function handleHydrationInterval(val) {
+    setHydrationInterval(val);
+    await invoke("set_hydration_interval", { minutes: val });
   }
 
   return (
@@ -116,6 +131,37 @@ function Settings() {
             />
             <span className="toggle-slider" />
           </label>
+        </div>
+
+        <div className="setting-row">
+          <label>
+            Recordar tomar agua
+            <span className="setting-hint">Kael te avisa cada cierto tiempo</span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={hydrationEnabled}
+              onChange={handleHydrationEnabled}
+            />
+            <span className="toggle-slider" />
+          </label>
+        </div>
+
+        <div className="setting-row">
+          <label>Intervalo</label>
+          <div className="setting-control">
+            <input
+              type="range"
+              min="15"
+              max="120"
+              step="5"
+              value={hydrationInterval}
+              disabled={!hydrationEnabled}
+              onChange={(e) => handleHydrationInterval(parseInt(e.target.value))}
+            />
+            <span className="setting-value">{hydrationInterval} min</span>
+          </div>
         </div>
       </div>
 

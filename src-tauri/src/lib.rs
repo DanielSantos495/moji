@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -21,6 +21,7 @@ const SCREEN_MARGIN: i32 = 16;
 const DEFAULT_SIZE: u32 = 120;
 const DEFAULT_OPACITY: f64 = 1.0;
 const DEFAULT_CHARACTER: &str = "kael";
+const DEFAULT_HYDRATION_INTERVAL_MIN: u32 = 60;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Config {
@@ -34,6 +35,10 @@ struct Config {
     monitor_index: usize,
     #[serde(default = "default_character")]
     character: String,
+    #[serde(default = "default_hydration_enabled")]
+    hydration_enabled: bool,
+    #[serde(default = "default_hydration_interval")]
+    hydration_interval_min: u32,
 }
 
 fn default_opacity() -> f64 {
@@ -45,6 +50,12 @@ fn default_size() -> u32 {
 fn default_character() -> String {
     DEFAULT_CHARACTER.to_string()
 }
+fn default_hydration_enabled() -> bool {
+    true
+}
+fn default_hydration_interval() -> u32 {
+    DEFAULT_HYDRATION_INTERVAL_MIN
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -54,6 +65,8 @@ impl Default for Config {
             click_through: false,
             monitor_index: 0,
             character: DEFAULT_CHARACTER.to_string(),
+            hydration_enabled: true,
+            hydration_interval_min: DEFAULT_HYDRATION_INTERVAL_MIN,
         }
     }
 }
@@ -91,6 +104,30 @@ fn update_config(app: &AppHandle, mutate: impl FnOnce(&mut Config)) {
 struct ConfigState(Mutex<Config>);
 struct ClickThroughState(Mutex<bool>);
 struct GhostMenuState(CheckMenuItem<tauri::Wry>);
+
+// Señal para reiniciar el ciclo del timer de hidratación. El hilo del timer
+// duerme con `wait_timeout` (o `wait` indefinido si está apagado); los setters
+// cambian config y luego llaman `signal()` para que el hilo despierte y rearme
+// el ciclo desde cero con los nuevos valores.
+struct HydrationSignal {
+    flag: Mutex<bool>,
+    cvar: Condvar,
+}
+
+impl HydrationSignal {
+    fn new() -> Self {
+        Self {
+            flag: Mutex::new(false),
+            cvar: Condvar::new(),
+        }
+    }
+
+    fn signal(&self) {
+        let mut guard = self.flag.lock().unwrap();
+        *guard = true;
+        self.cvar.notify_all();
+    }
+}
 
 fn apply_click_through(app: &tauri::AppHandle, enabled: bool) {
     if let Some(window) = app.get_webview_window("main") {
@@ -213,6 +250,132 @@ fn set_character(app: tauri::AppHandle, character: String) {
 }
 
 #[tauri::command]
+fn set_hydration_enabled(app: tauri::AppHandle, enabled: bool) {
+    update_config(&app, |c| c.hydration_enabled = enabled);
+    app.state::<HydrationSignal>().signal();
+}
+
+#[tauri::command]
+fn set_hydration_interval(app: tauri::AppHandle, minutes: u32) {
+    update_config(&app, |c| c.hydration_interval_min = minutes);
+    app.state::<HydrationSignal>().signal();
+}
+
+#[tauri::command]
+fn confirm_hydration(app: tauri::AppHandle, action: String) {
+    if let Some(win) = app.get_webview_window("hydration") {
+        let _ = win.close();
+    }
+    let _ = app.emit("hydration-confirmed", action);
+}
+
+// Posiciona la bubble a la izquierda de la ventana principal, centrada
+// verticalmente. Coordenadas en lógico para coherencia con el resto.
+fn open_hydration_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("hydration") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+
+    let bubble_w: f64 = 280.0;
+    let bubble_h: f64 = 110.0;
+    let gap: f64 = 12.0;
+
+    let (x, y) = app
+        .get_webview_window("main")
+        .and_then(|m| {
+            let pos = m.outer_position().ok()?;
+            let size = m.outer_size().ok()?;
+            let scale = m.scale_factor().ok()?;
+            let main_x = pos.x as f64 / scale;
+            let main_y = pos.y as f64 / scale;
+            let main_h = size.height as f64 / scale;
+            Some((
+                main_x - bubble_w - gap,
+                main_y + (main_h - bubble_h) / 2.0,
+            ))
+        })
+        .unwrap_or((100.0, 100.0));
+
+    let _ = tauri::WebviewWindowBuilder::new(
+        app,
+        "hydration",
+        tauri::WebviewUrl::App("/#hydration".into()),
+    )
+    .title("Moji — Hidratación")
+    .inner_size(bubble_w, bubble_h)
+    .position(x, y)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .build();
+}
+
+fn start_hydration_timer(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        let enabled: bool = {
+            let state = app.state::<ConfigState>();
+            let v = state.0.lock().unwrap().hydration_enabled;
+            v
+        };
+
+        // Toggle off: parquear el hilo indefinidamente hasta que un setter
+        // (típicamente set_hydration_enabled(true)) despierte la condvar.
+        if !enabled {
+            let signal = app.state::<HydrationSignal>();
+            let mut guard = signal.flag.lock().unwrap();
+            while !*guard {
+                guard = signal.cvar.wait(guard).unwrap();
+            }
+            *guard = false;
+            continue; // re-leer config y arrancar ciclo
+        }
+
+        let interval_secs: u64 = {
+            let state = app.state::<ConfigState>();
+            let mins = state.0.lock().unwrap().hydration_interval_min;
+            (mins as u64).saturating_mul(60).max(60)
+        };
+
+        // Espera el intervalo o hasta que un setter despierte la condvar.
+        let was_signaled: bool = {
+            let signal = app.state::<HydrationSignal>();
+            let mut guard = signal.flag.lock().unwrap();
+            if !*guard {
+                let (g, _) = signal
+                    .cvar
+                    .wait_timeout(guard, std::time::Duration::from_secs(interval_secs))
+                    .unwrap();
+                guard = g;
+            }
+            let signaled = *guard;
+            *guard = false;
+            signaled
+        };
+
+        if was_signaled {
+            // Config cambió (toggle o intervalo): rearmar ciclo desde cero.
+            continue;
+        }
+
+        // Timeout completo sin interrupciones → disparar.
+        let still_enabled: bool = {
+            let state = app.state::<ConfigState>();
+            let v = state.0.lock().unwrap().hydration_enabled;
+            v
+        };
+        if still_enabled {
+            let _ = app.emit("hydration-trigger", ());
+            open_hydration_window(&app);
+        }
+    });
+}
+
+#[tauri::command]
 fn open_settings(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();
@@ -224,7 +387,7 @@ fn open_settings(app: tauri::AppHandle) {
             tauri::WebviewUrl::App("/#settings".into()),
         )
         .title("Moji — Configuración")
-        .inner_size(300.0, 380.0)
+        .inner_size(300.0, 480.0)
         .resizable(false)
         .always_on_top(true)
         .build();
@@ -315,7 +478,7 @@ fn setup_tray(app: &tauri::App, click_through: bool) -> tauri::Result<()> {
                         tauri::WebviewUrl::App("/#settings".into()),
                     )
                     .title("Moji — Configuración")
-                    .inner_size(300.0, 380.0)
+                    .inner_size(300.0, 480.0)
                     .resizable(false)
                     .always_on_top(true)
                     .build();
@@ -338,6 +501,7 @@ pub fn run() {
 
             app.manage(ClickThroughState(Mutex::new(config.click_through)));
             app.manage(ConfigState(Mutex::new(config.clone())));
+            app.manage(HydrationSignal::new());
 
             create_main_window(app, &config)?;
             setup_tray(app, config.click_through)?;
@@ -347,6 +511,8 @@ pub fn run() {
                     let _ = win.set_ignore_cursor_events(true);
                 }
             }
+
+            start_hydration_timer(app.handle().clone());
 
             #[cfg(desktop)]
             {
@@ -373,7 +539,10 @@ pub fn run() {
             set_main_opacity,
             open_settings,
             get_config,
-            set_character
+            set_character,
+            set_hydration_enabled,
+            set_hydration_interval,
+            confirm_hydration
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
