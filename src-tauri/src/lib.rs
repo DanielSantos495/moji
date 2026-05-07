@@ -2,7 +2,8 @@ use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager,
+    window::Monitor,
+    Emitter, Manager, WebviewWindow,
 };
 
 const TRANSPARENT_SCRIPT: &str = r#"
@@ -11,6 +12,8 @@ const TRANSPARENT_SCRIPT: &str = r#"
     document.body.style.background = 'transparent';
     document.body.style.backgroundColor = 'transparent';
 "#;
+
+const SCREEN_MARGIN: i32 = 16;
 
 struct ClickThroughState(Mutex<bool>);
 struct GhostMenuState(CheckMenuItem<tauri::Wry>);
@@ -35,6 +38,56 @@ fn toggle_ghost_mode(app: &tauri::AppHandle) {
     let _ = ghost.0.set_checked(enabled);
 }
 
+// Ancla la ventana a la esquina inferior derecha del work_area del monitor
+// (work_area excluye dock/menu bar/taskbar). Trabaja todo en píxeles
+// lógicos: en macOS las posiciones físicas no son consistentes entre
+// monitores con scale distinto, pero el sistema de coordenadas lógico
+// (puntos NSScreen) sí es unificado globalmente, así que LogicalPosition
+// cruza monitores correctamente.
+fn anchor_to_monitor(window: &WebviewWindow, monitor: &Monitor) {
+    let Ok(outer) = window.outer_size() else { return };
+    let Ok(current_scale) = window.scale_factor() else { return };
+    let logical_w = outer.width as f64 / current_scale;
+    let logical_h = outer.height as f64 / current_scale;
+
+    let target_scale = monitor.scale_factor();
+    let work_area = monitor.work_area();
+    let wa_x = work_area.position.x as f64 / target_scale;
+    let wa_y = work_area.position.y as f64 / target_scale;
+    let wa_w = work_area.size.width as f64 / target_scale;
+    let wa_h = work_area.size.height as f64 / target_scale;
+
+    let margin = SCREEN_MARGIN as f64;
+    let x = wa_x + wa_w - logical_w - margin;
+    let y = wa_y + wa_h - logical_h - margin;
+    let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+}
+
+// Re-ancla en el monitor donde ya vive la ventana (tras un resize).
+fn re_anchor_current(window: &WebviewWindow) {
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        anchor_to_monitor(window, &monitor);
+    }
+}
+
+fn move_main_to_next_monitor(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else { return };
+    let Ok(monitors) = window.available_monitors() else { return };
+    if monitors.len() < 2 {
+        return;
+    }
+    let current_pos = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .map(|m| *m.position());
+    let current_idx = current_pos
+        .and_then(|p| monitors.iter().position(|m| *m.position() == p))
+        .unwrap_or(0);
+    let next = &monitors[(current_idx + 1) % monitors.len()];
+    anchor_to_monitor(&window, next);
+}
+
 #[tauri::command]
 fn get_click_through(state: tauri::State<'_, ClickThroughState>) -> bool {
     *state.0.lock().unwrap()
@@ -56,6 +109,7 @@ fn set_click_through(
 fn set_main_size(app: tauri::AppHandle, size: u32) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_size(tauri::LogicalSize::new(size as f64, size as f64));
+        re_anchor_current(&window);
     }
 }
 
@@ -87,12 +141,36 @@ fn open_settings(app: tauri::AppHandle) {
 }
 
 fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let size_logical: f64 = 120.0;
+    let margin_logical: f64 = SCREEN_MARGIN as f64;
+
+    // Calcular posición inicial sobre el monitor principal antes de construir
+    // la ventana. work_area es físico; lo paso a lógico dividiendo por su
+    // scale factor, porque WindowBuilder::position usa coordenadas lógicas.
+    let (x, y) = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let scale = m.scale_factor();
+            let wa = m.work_area();
+            let wa_x = wa.position.x as f64 / scale;
+            let wa_y = wa.position.y as f64 / scale;
+            let wa_w = wa.size.width as f64 / scale;
+            let wa_h = wa.size.height as f64 / scale;
+            (
+                wa_x + wa_w - size_logical - margin_logical,
+                wa_y + wa_h - size_logical - margin_logical,
+            )
+        })
+        .unwrap_or((100.0, 100.0));
+
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
         .title("Moji")
-        .inner_size(200.0, 200.0)
-        .min_inner_size(100.0, 100.0)
-        .max_inner_size(400.0, 400.0)
-        .position(100.0, 100.0)
+        .inner_size(size_logical, size_logical)
+        .min_inner_size(120.0, 120.0)
+        .max_inner_size(150.0, 150.0)
+        .position(x, y)
         .resizable(true)
         .decorations(false)
         .transparent(true)
@@ -116,16 +194,22 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
     app.manage(GhostMenuState(ghost_item.clone()));
 
+    let move_screen_item =
+        MenuItem::with_id(app, "move_screen", "Mover a otra pantalla", true, None::<&str>)?;
     let settings_item =
         MenuItem::with_id(app, "settings", "Configuración", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Salir de Moji", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&ghost_item, &settings_item, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[&ghost_item, &move_screen_item, &settings_item, &quit_item],
+    )?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "ghost" => toggle_ghost_mode(app),
+            "move_screen" => move_main_to_next_monitor(app),
             "settings" => {
                 if let Some(win) = app.get_webview_window("settings") {
                     let _ = win.show();

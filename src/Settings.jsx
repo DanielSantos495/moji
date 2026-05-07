@@ -5,7 +5,7 @@ import "./Settings.css";
 
 function Settings() {
   const [opacity, setOpacity] = useState(1);
-  const [size, setSize] = useState(200);
+  const [size, setSize] = useState(120);
   const [clickThrough, setClickThrough] = useState(false);
 
   useEffect(() => {
@@ -63,9 +63,9 @@ function Settings() {
           <div className="setting-control">
             <input
               type="range"
-              min="100"
-              max="400"
-              step="10"
+              min="120"
+              max="150"
+              step="1"
               value={size}
               onChange={(e) => handleSize(parseInt(e.target.value))}
             />
