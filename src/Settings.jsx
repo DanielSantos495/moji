@@ -9,7 +9,12 @@ function Settings() {
   const [clickThrough, setClickThrough] = useState(false);
 
   useEffect(() => {
-    invoke("get_click_through").then(setClickThrough);
+    invoke("get_config").then((c) => {
+      if (!c) return;
+      setOpacity(c.opacity);
+      setSize(c.size);
+      setClickThrough(c.click_through);
+    });
 
     const unlisten = listen("click-through-changed", (event) => {
       setClickThrough(event.payload);

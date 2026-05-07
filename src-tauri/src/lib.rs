@@ -1,9 +1,13 @@
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
     window::Monitor,
-    Emitter, Manager, WebviewWindow,
+    AppHandle, Emitter, Manager, WebviewWindow,
 };
 
 const TRANSPARENT_SCRIPT: &str = r#"
@@ -14,7 +18,70 @@ const TRANSPARENT_SCRIPT: &str = r#"
 "#;
 
 const SCREEN_MARGIN: i32 = 16;
+const DEFAULT_SIZE: u32 = 120;
+const DEFAULT_OPACITY: f64 = 1.0;
 
+#[derive(Serialize, Deserialize, Clone)]
+struct Config {
+    #[serde(default = "default_opacity")]
+    opacity: f64,
+    #[serde(default = "default_size")]
+    size: u32,
+    #[serde(default)]
+    click_through: bool,
+    #[serde(default)]
+    monitor_index: usize,
+}
+
+fn default_opacity() -> f64 {
+    DEFAULT_OPACITY
+}
+fn default_size() -> u32 {
+    DEFAULT_SIZE
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            opacity: DEFAULT_OPACITY,
+            size: DEFAULT_SIZE,
+            click_through: false,
+            monitor_index: 0,
+        }
+    }
+}
+
+fn config_path(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().app_config_dir().ok()?;
+    let _ = fs::create_dir_all(&dir);
+    Some(dir.join("settings.json"))
+}
+
+fn load_config(app: &AppHandle) -> Config {
+    let Some(path) = config_path(app) else {
+        return Config::default();
+    };
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Config::default();
+    };
+    serde_json::from_str::<Config>(&content).unwrap_or_default()
+}
+
+fn save_config(app: &AppHandle, config: &Config) {
+    let Some(path) = config_path(app) else { return };
+    if let Ok(json) = serde_json::to_string_pretty(config) {
+        let _ = fs::write(path, json);
+    }
+}
+
+fn update_config(app: &AppHandle, mutate: impl FnOnce(&mut Config)) {
+    let state = app.state::<ConfigState>();
+    let mut config = state.0.lock().unwrap();
+    mutate(&mut config);
+    save_config(app, &config);
+}
+
+struct ConfigState(Mutex<Config>);
 struct ClickThroughState(Mutex<bool>);
 struct GhostMenuState(CheckMenuItem<tauri::Wry>);
 
@@ -36,6 +103,8 @@ fn toggle_ghost_mode(app: &tauri::AppHandle) {
 
     let ghost = app.state::<GhostMenuState>();
     let _ = ghost.0.set_checked(enabled);
+
+    update_config(app, |c| c.click_through = enabled);
 }
 
 // Ancla la ventana a la esquina inferior derecha del work_area del monitor
@@ -84,8 +153,9 @@ fn move_main_to_next_monitor(app: &tauri::AppHandle) {
     let current_idx = current_pos
         .and_then(|p| monitors.iter().position(|m| *m.position() == p))
         .unwrap_or(0);
-    let next = &monitors[(current_idx + 1) % monitors.len()];
-    anchor_to_monitor(&window, next);
+    let next_idx = (current_idx + 1) % monitors.len();
+    anchor_to_monitor(&window, &monitors[next_idx]);
+    update_config(app, |c| c.monitor_index = next_idx);
 }
 
 #[tauri::command]
@@ -103,6 +173,7 @@ fn set_click_through(
     *state.0.lock().unwrap() = enabled;
     apply_click_through(&app, enabled);
     let _ = ghost.0.set_checked(enabled);
+    update_config(&app, |c| c.click_through = enabled);
 }
 
 #[tauri::command]
@@ -111,6 +182,7 @@ fn set_main_size(app: tauri::AppHandle, size: u32) {
         let _ = window.set_size(tauri::LogicalSize::new(size as f64, size as f64));
         re_anchor_current(&window);
     }
+    update_config(&app, |c| c.size = size);
 }
 
 #[tauri::command]
@@ -119,6 +191,12 @@ fn set_main_opacity(app: tauri::AppHandle, opacity: f64) {
         let js = format!("document.documentElement.style.opacity = '{opacity}'");
         let _ = window.eval(&js);
     }
+    update_config(&app, |c| c.opacity = opacity);
+}
+
+#[tauri::command]
+fn get_config(state: tauri::State<'_, ConfigState>) -> Config {
+    state.0.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -140,17 +218,20 @@ fn open_settings(app: tauri::AppHandle) {
     }
 }
 
-fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
-    let size_logical: f64 = 120.0;
+fn create_main_window(app: &tauri::App, config: &Config) -> tauri::Result<()> {
+    let size_logical: f64 = config.size as f64;
     let margin_logical: f64 = SCREEN_MARGIN as f64;
 
-    // Calcular posición inicial sobre el monitor principal antes de construir
-    // la ventana. work_area es físico; lo paso a lógico dividiendo por su
+    // Restaurar monitor previo si sigue conectado; si no, caer a la pantalla
+    // principal. work_area es físico; lo paso a lógico dividiendo por su
     // scale factor, porque WindowBuilder::position usa coordenadas lógicas.
-    let (x, y) = app
-        .primary_monitor()
+    let monitor = app
+        .available_monitors()
         .ok()
-        .flatten()
+        .and_then(|monitors| monitors.into_iter().nth(config.monitor_index))
+        .or_else(|| app.primary_monitor().ok().flatten());
+
+    let (x, y) = monitor
         .map(|m| {
             let scale = m.scale_factor();
             let wa = m.work_area();
@@ -182,13 +263,13 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+fn setup_tray(app: &tauri::App, click_through: bool) -> tauri::Result<()> {
     let ghost_item = CheckMenuItem::with_id(
         app,
         "ghost",
         "Modo Fantasma",
         true,
-        false,
+        click_through,
         Some("CmdOrCtrl+Shift+M"),
     )?;
 
@@ -240,10 +321,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.manage(ClickThroughState(Mutex::new(false)));
+            let config = load_config(&app.handle());
 
-            create_main_window(app)?;
-            setup_tray(app)?;
+            app.manage(ClickThroughState(Mutex::new(config.click_through)));
+            app.manage(ConfigState(Mutex::new(config.clone())));
+
+            create_main_window(app, &config)?;
+            setup_tray(app, config.click_through)?;
+
+            if config.click_through {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.set_ignore_cursor_events(true);
+                }
+            }
 
             #[cfg(desktop)]
             {
@@ -268,7 +358,8 @@ pub fn run() {
             set_click_through,
             set_main_size,
             set_main_opacity,
-            open_settings
+            open_settings,
+            get_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
