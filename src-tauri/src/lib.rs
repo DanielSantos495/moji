@@ -20,6 +20,7 @@ const TRANSPARENT_SCRIPT: &str = r#"
 const SCREEN_MARGIN: i32 = 16;
 const DEFAULT_SIZE: u32 = 120;
 const DEFAULT_OPACITY: f64 = 1.0;
+const DEFAULT_CHARACTER: &str = "kael";
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Config {
@@ -31,6 +32,8 @@ struct Config {
     click_through: bool,
     #[serde(default)]
     monitor_index: usize,
+    #[serde(default = "default_character")]
+    character: String,
 }
 
 fn default_opacity() -> f64 {
@@ -38,6 +41,9 @@ fn default_opacity() -> f64 {
 }
 fn default_size() -> u32 {
     DEFAULT_SIZE
+}
+fn default_character() -> String {
+    DEFAULT_CHARACTER.to_string()
 }
 
 impl Default for Config {
@@ -47,6 +53,7 @@ impl Default for Config {
             size: DEFAULT_SIZE,
             click_through: false,
             monitor_index: 0,
+            character: DEFAULT_CHARACTER.to_string(),
         }
     }
 }
@@ -197,6 +204,12 @@ fn set_main_opacity(app: tauri::AppHandle, opacity: f64) {
 #[tauri::command]
 fn get_config(state: tauri::State<'_, ConfigState>) -> Config {
     state.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_character(app: tauri::AppHandle, character: String) {
+    update_config(&app, |c| c.character = character.clone());
+    let _ = app.emit("character-changed", character);
 }
 
 #[tauri::command]
@@ -359,7 +372,8 @@ pub fn run() {
             set_main_size,
             set_main_opacity,
             open_settings,
-            get_config
+            get_config,
+            set_character
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

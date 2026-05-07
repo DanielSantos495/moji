@@ -75,6 +75,24 @@ body {
   accent-color: #b5ead7;
 }
 
+.setting-select {
+  font-size: 13px;
+  font-family: inherit;
+  color: #444;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.setting-select:hover,
+.setting-select:focus {
+  border-color: #b5ead7;
+}
+
 .setting-value {
   font-size: 12px;
   color: #888;

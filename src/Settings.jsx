@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { CHARACTERS, DEFAULT_CHARACTER } from "./components/MojiSprite/registry";
 import "./Settings.css";
 
 function Settings() {
   const [opacity, setOpacity] = useState(1);
   const [size, setSize] = useState(120);
   const [clickThrough, setClickThrough] = useState(false);
+  const [character, setCharacter] = useState(DEFAULT_CHARACTER);
 
   useEffect(() => {
     invoke("get_config").then((c) => {
@@ -14,6 +16,7 @@ function Settings() {
       setOpacity(c.opacity);
       setSize(c.size);
       setClickThrough(c.click_through);
+      if (c.character) setCharacter(c.character);
     });
 
     const unlisten = listen("click-through-changed", (event) => {
@@ -40,6 +43,11 @@ function Settings() {
     await invoke("set_click_through", { enabled });
   }
 
+  async function handleCharacter(value) {
+    setCharacter(value);
+    await invoke("set_character", { character: value });
+  }
+
   return (
     <div className="settings">
       <div className="settings-header">
@@ -48,6 +56,23 @@ function Settings() {
       </div>
 
       <div className="settings-body">
+        <div className="setting-row">
+          <label>Personaje</label>
+          <div className="setting-control">
+            <select
+              className="setting-select"
+              value={character}
+              onChange={(e) => handleCharacter(e.target.value)}
+            >
+              {CHARACTERS.map((name) => (
+                <option key={name} value={name}>
+                  {name.charAt(0).toUpperCase() + name.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="setting-row">
           <label>Opacidad</label>
           <div className="setting-control">

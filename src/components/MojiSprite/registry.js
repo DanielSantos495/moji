@@ -38,6 +38,8 @@ export const REGISTRY = {
   [embi.name]: embi.states,
 };
 
+export const CHARACTERS = Object.keys(REGISTRY);
+
 export const DEFAULT_CHARACTER = 'kael';
 export const DEFAULT_STATE = 'default';
 export const CLICK_STATE = 'click';
